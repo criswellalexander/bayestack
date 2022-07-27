@@ -820,7 +820,7 @@ def gen_simulated_eventdict(Mlist,Rtrue,sigma_f,nsignal,nnoise,rng,scatter=None,
                 fpeaknoise_i = st.uniform.rvs(loc=1.5,scale=2.5,size=nnoise+ndiff,random_state=rng)
             else:
                 raise TypeError("Invalid prior specification (need something to draw from for simulated signals!)")
-            fpeakchains_i = np.concatenate((fpeaksignal_i,fpeaknoise_i))
+            fpeakchains_i = np.concatenate((fpeaksignal_i,fpeaknoise_i.flatten()))
         elif nosignal==True:
             if use_prior=='load':
                 eventdict[mstr]['event_type'] = 'simulated run without signals (BayesWave prior)'
