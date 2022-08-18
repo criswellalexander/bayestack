@@ -92,13 +92,7 @@ class Prior_f:
         
         self.kde = kdes
         self.pdf = interp1d(fs,fdist)
-#        if boundary=='Standard':
-#            ## default scipy kde
-#            self.kde = kde(samples,bw_method=kde_bandwidth)
-#        else:
-#            self.kde = bounded_1d_kde(samples,xlow=self.fmin,xhigh=self.fmax,method=boundary,bw_method=kde_bandwidth)
-#        fs = np.linspace(self.fmin,self.fmax,fgrid)
-#        self.pdf = interp1d(fs,self.kde(fs))
+
     
     def rvs(self,size=1,rng=None,det_idx=None):
         '''

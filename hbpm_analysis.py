@@ -43,9 +43,6 @@ import dill
 import argparse
 sys.path.append(os.path.abspath('./hbpm_utils/'))
 from hbpm_utils import *
-# from importlib import reload
-# reload(sys.modules["hbpm_utils"])
-# from hbpm_utils import *
 matplotlib.rcParams['figure.figsize'] = (8.08, 5.)
 matplotlib.rcParams['xtick.labelsize'] = 12.0
 matplotlib.rcParams['ytick.labelsize'] = 12.0
@@ -144,14 +141,16 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
             if spec_i.endswith('.pickle'):
                 with open(spec_i,'rb') as file:
                     fprior_loaded = dill.load(file)
-                for ifo_j in ifos.split(','):
-                    if type(fprior_loaded) is dict:
+                if type(fprior_loaded) is dict:
+                    for ifo_j in ifos.split(','):
                         fprior_dict[ifo_j] = fprior_loaded[ifo_j]
-                    else:
+                        if fprior_dict[ifo_j].bw_method != prior_bandwidth:
+                            print("Loading pre-processed fpeak prior for {}. Warning: prior_bandwidth argument will be ignored!".format(ifo_j))
+                            print("Pre-computed prior bandwidth is {}.".format(fprior_dict[ifo_j].bw_method))
+                else:
+                    fprior_dict['combined'] = fprior_loaded
+                    for ifo_j in ifos.split(','):
                         fprior_dict[ifo_j] = fprior_loaded
-                    if fprior_dict[ifo_j].bw_method != prior_bandwidth:
-                        print("Loading pre-processed fpeak prior for {}. Warning: prior_bandwidth argument will be ignored!".format(ifo_j))
-                        print("Pre-computed prior bandwidth is {}.".format(fprior_dict[ifo_j].bw_method))
                 break # get out of the for loop since we've gotten everything we need
             ## second option: uniform prior
             elif spec_i == 'uniform':
@@ -270,46 +269,7 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
                                            title='Subset of BayesWave $\mathrm{f_{peak}}$ Posteriors',
                                            kde_bandwidth=posterior_bandwidth,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,
                                            aggregation=aggregation,ifos=ifos)
-#    
-#    
-#    
-#    
-#    if type(fprior_spec) is str:
-#        if fprior_spec == 'uniform':
-#            eventdict= gen_BayesWave_eventdict(events,ev_df,kde_boundary='Reflection',seed=1995,plot='subset',use_prior='uniform',
-#                                           obs_run=True,sim_df=sim_df,nosignal=nosignal,
-#                                           saveto=fpeak_subset_saveto,showplot=showplots,
-#                                           title='Subset of BayesWave $\mathrm{f_{peak}}$ Posteriors',
-#                                           kde_bandwidth=posterior_bandwidth,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,
-#                                           aggregation=aggregation,ifos=ifos)
-#        else:
-#            eventdict= gen_BayesWave_eventdict(events,ev_df,kde_boundary='Reflection',seed=1995,plot='subset',use_prior='array',
-#                                           prior=fprior.samples,obs_run=True,sim_df=sim_df,nosignal=nosignal,
-#                                           saveto=fpeak_subset_saveto,showplot=showplots,
-#                                           title='Subset of BayesWave $\mathrm{f_{peak}}$ Posteriors',
-#                                           kde_bandwidth=posterior_bandwidth,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,
-#                                           aggregation=aggregation,ifos=ifos)
-#    elif type(fprior_spec) is dict:
-#        
-#    else:
-#        ## user-specified prior function. 
-#        if not hasattr(fprior_spec,'rvs'):
-#            print("Warning: user-specified prior distribution. No samples have been provided, so posterior draw-up will not be performed.")
-#            eventdict= gen_BayesWave_eventdict(events,ev_df,kde_boundary='Reflection',seed=1995,plot='subset',use_prior='no',
-#                                               obs_run=True,sim_df=sim_df,nosignal=nosignal,
-#                                               saveto=fpeak_subset_saveto,showplot=showplots,
-#                                               title='Subset of BayesWave $\mathrm{f_{peak}}$ Posteriors',
-#                                               kde_bandwidth=posterior_bandwidth,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,
-#                                           aggregation=aggregation,ifos=ifos)
-#        else:
-#            ## use .rvs() to make draw-up array
-#            spec_samples = fprior_spec.rvs(size=5000000)
-#            eventdict= gen_BayesWave_eventdict(events,ev_df,kde_boundary='Reflection',seed=1995,plot='subset',use_prior='array',
-#                                           prior=spec_samples,obs_run=True,sim_df=sim_df,nosignal=nosignal,
-#                                           saveto=fpeak_subset_saveto,showplot=showplots,
-#                                           title='Subset of BayesWave $\mathrm{f_{peak}}$ Posteriors',
-#                                           kde_bandwidth=posterior_bandwidth,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,
-#                                           aggregation=aggregation,ifos=ifos)
+
     ## compute likelihoods
     print("Computing likelihoods...")
     likes = get_multievent_likelihoods(Rs,Ms,eventdict,fprior=total_fprior,Mprior=Mprior,
