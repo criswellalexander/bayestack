@@ -1,4 +1,4 @@
-# HAYstack v1.0
+# HAYstack v1.0.0
 
 Hierarchical bAYsian stacking
 
