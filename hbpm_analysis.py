@@ -53,8 +53,8 @@ matplotlib.rcParams['axes.prop_cycle'] = matplotlib.cycler(color=["mediumorchid"
 
 
 
-def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=None,Mchirp_scaling='none',
-                 Rbounds=None,Ns=None,saveto=None,showplots=True,nosignal=False,Rtrue=None,bootstrap=None,prior_bandwidth=0.15,posterior_bandwidth=0.15,
+def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=None,Mchirp_type='simulated',Mchirp_scaling='none',Mchirp_scatter=False,
+                 Rbounds=None,weighted_Rprior=True,Ns=None,saveto=None,showplots=True,nosignal=False,Rtrue=None,bootstrap=None,prior_bandwidth=0.15,posterior_bandwidth=0.15,
                  aggregation='sum',ifos='H1,L1',seed=None):
     '''
     This function runs the Hierarchical Bayesian Post-merger analysis end-to-end.
@@ -69,11 +69,18 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
         z_adj (str) : Whether to account for redshift. If 'known', uses luminosity distances from ev_df_file 
                       to compute redshift correction for each event, assuming standard LambdaCDM. 
                       ('posteriors' coming soon (TM), which will allow for use of inspiral redshift posteriors.)
+        Mchirp_type (str) : What kind of Mchirp posteriors to use. NOTE: currently only supports 'simulated'. 
+                            To-do: integrate ability to handle sampled Mchirp posteriors
+                            (this functionality is available manually via the functions in hbpm_utils, but the run_analysis pipeline doesn't yet support it.)
         Mchirp_scaling (str): How to scale the simulated chirp mass posterior width. Can be 'none' (sets sigma_Mc = 0.01 Msun),
                                'dist' (scales with distance to merger), or 'snr' (scales with network signal-to-noise)
                                We use GW170817 as a reference point. (See Farr et al. (2016) for details on this scaling)
+        Mchirp_scatter (bool) : Whether to account for detector-noise-induced scatter by moving the Mchirp posterior mean from the true Mchirp before generating samples.
+                                Scatter standard deviation will match that calculated for each event by the method specified in Mchirp_scaling.
+                                Only needed if Mchirp_type is 'simulated'.
         Rbounds (tuple of floats) : (Rmin,Rmax); Min and max of R16 range. 
                                     If left unspecified, will be set to the min/max of a sampled prior, or (9km,15km) for a uniform prior.
+        weighted_Rprior (bool) : Whether Rprior samples are weighted. If so, Rprior file should have a second column with the weights.
         Ns (list of int) : List of N_events at which to plot the posterior evolution. 
                            If left unspecified, will be set to np.round(np.linspace(0,N_events,4))[1:].
         saveto (str) : '/path/to/save/directory/'
@@ -109,15 +116,16 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
         R16prior = 'This analysis used a uniform prior on [{:2.1f} km,{:2.1f} km] for R_1.6.'.format(Rmin,Rmax)
     else:
         ## load Multimessenger prior
-        R16prior = np.loadtxt(Rprior)
-        if Rbounds is None:
-            Rs = np.linspace(R16prior.min(),R16prior.max(),200)
-        else:
-            Rmin = Rbounds[0]
-            Rmax = Rbounds[1]
-            Rs = np.linspace(Rmin,Rmax,200)
-        ## R16 prior KDE
-        Rprior_kernel = kde(R16prior)
+        Rs, Rprior_kernel, R16prior = load_Rprior(Rprior,Rbounds=Rbounds,weighted=weighted_Rprior,return_samples=True)
+#        R16prior = np.loadtxt(Rprior)
+#        if Rbounds is None:
+#            Rs = np.linspace(R16prior.min(),R16prior.max(),200)
+#        else:
+#            Rmin = Rbounds[0]
+#            Rmax = Rbounds[1]
+#            Rs = np.linspace(Rmin,Rmax,200)
+#        ## R16 prior KDE
+#        Rprior_kernel = kde(R16prior)
     ## fine grid
     Ms = np.linspace(0.8,1.8,200)
     
@@ -203,6 +211,12 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
     ## set Mchirp prior (uniform unless we change it)
     Mprior = st.uniform(loc=Ms.min(),scale=(Ms.max()-Ms.min()))
     
+    ## handle detector-noise-induced scatter of the Mchirp posterior means
+    if Mchirp_scatter:
+        Mchirp_scatter_sigma = 'match'
+    else:
+        Mchirp_scatter_sigma = None
+    
     ## get sampled empirical relations
     ## if bootstrap is None or an array, this is already handled, but this lets us specify 'default' or '/path/to/file.txt'.
     if type(bootstrap) is str:
@@ -273,7 +287,8 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
     ## compute likelihoods
     print("Computing likelihoods...")
     likes = get_multievent_likelihoods(Rs,Ms,eventdict,fprior=total_fprior,Mprior=Mprior,
-                                       verbose=False,bootstrap=bootstrap,z_adj=z_adj,Mchirp_scaling=Mchirp_scaling)
+                                       verbose=False,bootstrap=bootstrap,
+                                       z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,Mchirp_scatter=Mchirp_scatter_sigma)
     ## save
     if saveto is not None:
         print("Saving outputs to {}".format(saveto))
@@ -318,18 +333,23 @@ if __name__ == '__main__':
     parser.add_argument('--Mchirp_scaling',stype=str,
                         help="Can be 'none' (all sigma_Mc=0.01Mo), 'dist' (distance scaling), or 'snr' (network SNR scaling).",
                         default='none')
+    parser.add_argument('--Mchirp_scatter',
+                        help="Whether to scatter Mchirp posterior means in accordance with their estimated variance.",
+                        action='store_true')
     parser.add_argument('--fprior_file', type=str,
                         help='/path/to/file/with/fpeak/prior/samples.txt (default: BayesWave fpeak prior)',
                         default='./priors/fpeak_broad_prior.txt')
     parser.add_argument('--Rprior', type=str,
-                        help="'/path/to/file/with/R16/prior/samples.txt' (default: Dietrich+2020 Multimessenger Prior) OR 'uniform'",
-                        default='./priors/R16_prior.txt')
+                        help="'/path/to/file/with/R16/prior/samples.txt' (default: Huth+2022 Multimessenger Prior) OR 'uniform'",
+                        default='./priors/Huth22_R16_prior.txt')
     parser.add_argument('-ns','--nosignal', help='Do an equivalent run without real signals for comparison.',
                         action='store_true')
     parser.add_argument('-plt','--showplots', help='Display inline plots.', action='store_true')
     parser.add_argument('--Rbounds', type=tuple,
                         help='(Rmin,Rmax) (default: Rprior sample min/max, or (9,15) for uniform Rprior)',
                         default=None)
+    parser.add_argument('--no_Rweights', help='Specify that the provided R1.6 prior samples are unweighted (as is the case for the Dietrich+22 prior).',
+                        action='store_true')
     parser.add_argument('--N_thresholds', type=int, nargs='+',
                         help='N_events at which to plot R_1.6 posterior evolution. (defaults to 3 equally spaced intervals)',
                         default=None)
@@ -364,9 +384,13 @@ if __name__ == '__main__':
         print('Loading bootstrapped empirical relation coefficients...')
         ## should be mostly robust to different delimiters, but if you're having trouble switch to space-delimited
         boot_data = load_bootstrap(args.bootstrap)
+    ## invert weighting indicator (I want weights to default to true, but how argparser handles bools means this is the most externally intuitive way of setting things up)
+    weighted_Rprior = not args.no_Rweights
+
     ## call function
     run_analysis(args.datadir,args.fprior_file,args.Rprior_file,args.eos,args.sim_df_file,args.ev_df_file,
-                 Ns=Ns,saveto=args.saveto,showplots=args.showplots,bootstrap=boot_data,z_adj=args.z_adj,Mchirp_scaling=args.Mchirp_scaling,
+                 Ns=Ns,saveto=args.saveto,showplots=args.showplots,bootstrap=boot_data,z_adj=args.z_adj,
+                 Mchirp_scaling=args.Mchirp_scaling, Mchirp_scatter=args.Mchirp_scatter,Rbounds=args.Rbounds,weighted_Rprior=weighted_Rprior,
                  prior_bandwidth=args.prior_bandwidth,post_bandwidth=args.post_bandwidth,aggregation=args.aggregation,ifos=args.ifos)
     
     

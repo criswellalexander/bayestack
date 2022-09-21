@@ -688,13 +688,15 @@ def load_Bilby_Mchirp(datadir):
     Msamp = bilby_post['chirp_mass'].to_numpy()
     return Msamp
 
-def load_Rprior(Rprior_file,plot=True,return_samples=False):
+def load_Rprior(Rprior_file,Rbounds=None,weighted=True,plot=True,return_samples=False):
     '''
     Function to load the prior for R1.6.
     Currently we are using the multimessenger prior of Dietrich et al. (2020) https://www.science.org/doi/10.1126/science.abb4317
     
     Arguments:
         Rprior_file (str) : '/path/to/R16/prior/samples.txt'
+        Rbounds (tuple of floats) : (Rmin,Rmax); Min and max of R16 range. If None, will be set to the sample min/max.
+        weights (bool) : Whether samples should be weighted. If so, Rprior_file should have a second column with the weights.
         plot (bool) : Whether to also return a plot of the R16 prior KDE.
         return_samples (bool) : Whether to also return the loaded R16 prior samples.
         
@@ -702,13 +704,28 @@ def load_Rprior(Rprior_file,plot=True,return_samples=False):
         Rs (array) : R1.6 range to consider (and range on which KDE is valid!)
         Rprior_kernel (scipy.stats.gaussian_kde) : R_1.6 prior KDE
         (Optional) Rprior_samples (array) : R_1.6 prior samples used to construct KDE. Only returned if return_samples==True
+        (Optional) Rprior_weights (array) : R_1.6 sample weights used to construct KDE. Only returned if return_samples==True and weighted==True
     '''
     ## load prior
-    Rprior_samples = np.loadtxt(Rprior_file)
+    Rprior_data = np.loadtxt(Rprior_file)
+    if weighted:
+        Rprior_samples = Rprior_data[:,0]
+        Rprior_weights = Rprior_data[:,1]
+        Rprior_kernel = kde(Rprior_samples,weights=Rprior_weights)
+    else:
+        if Rprior_data.ndim > 1:
+            print("Warning: R_1.6 prior data has a second column, but weighted==False. Assuming first column contains samples...")
+            Rprior_samples = Rprior_data[:,0]
+        else:
+            Rprior_samples = Rprior_data
+        Rprior_kernel = kde(Rprior_samples)
     ## set grid in R
-    Rs = np.linspace(Rprior_samples.min(),Rprior_samples.max(),200)
-    ## R16 prior KDE
-    Rprior_kernel = kde(Rprior_samples)
+    if Rbounds is not None:
+        Rmin = Rbounds[0]
+        Rmax = Rbounds[1]
+        Rs = np.linspace(Rmin,Rmax,200)
+    else:
+        Rs = np.linspace(Rprior_samples.min(),Rprior_samples.max(),200)
     ## plot
     if plot==True:
         plt.figure()
@@ -719,8 +736,10 @@ def load_Rprior(Rprior_file,plot=True,return_samples=False):
         plt.gca().set_yticks([])
         mplcyberpunk.add_glow_effects()
         plt.show()
-    ## (optional) return KDE and samples
-    if return_samples==True:
+    ## (optional) return KDE and samples/weights
+    if return_samples and weighted:
+        return Rs, Rprior_kernel, Rprior_data
+    elif return_samples and not weighted:
         return Rs, Rprior_kernel, Rprior_samples
     else:
         return Rs, Rprior_kernel
@@ -1389,7 +1408,7 @@ def iterative_normalized_aggregate_likelihood(likelihood_list):
 
 
 def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st.uniform(loc=1.5,scale=2.5),
-                               Mprior=st.uniform(loc=0,scale=5),Mchirp_scaling='none',verbose=True,bootstrap=None,z_adj=None):
+                               Mprior=st.uniform(loc=0,scale=5),Mchirp_scaling='none',Mchirp_scatter=None,verbose=True,bootstrap=None,z_adj=None):
     '''
     Function to compute a list containing the likelihood p(data|R) for each event in an eventdict produced by either
     gen_BayesWave_eventdict() or gen_simulated_eventdict(). 
@@ -1401,7 +1420,7 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
         eventdict (dict) : Dictionary containing data for and information about each event to be analyzed. 
                            See gen_BayesWave_eventdict() and/or gen_simulated_eventdict() for details.
         Mchirp_type (str) : Nature of chirp mass posterior. Can be 'simulated' or 'samples'. If 'simulated', the Mchirp value stored in
-                            each eventdict entry will be used (along with Mchirp_scaling, below) to simulate the Mchirp posteriors as 
+                            each eventdict entry will be used (along with Mchirp_scaling and Mchirp_scatter, below) to simulate the Mchirp posteriors as 
                             Normal distributions. If 'samples', the Posterior_M object stored in each eventdict will be used instead.
         fprior (kernel) : Peak frequency prior kernel.
         Mprior (kernel) : Chirp mass prior kernel.
@@ -1409,6 +1428,9 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
                                'dist' (scales with distance to merger), or 'snr' (scales with network signal-to-noise)
                                We use GW170817 as a reference point. (See Farr et al. (2016) for details on this scaling)
                                Only needed if Mchirp_type is 'simulated'.
+        Mchirp_scatter (float or str) : Standard deviation of detector-noise-induced scatter by which to move the Mchirp posterior mean from the true Mchirp before generating samples.
+                                 Should be of same order as sigma_mc from Mchirp_scaling.
+                                 Only needed if Mchirp_type is 'simulated'. Can also be 'match' to be set to each event's respective sigma_Mc.
         verbose (bool) : If True, code will print progress updates with each event.
         bootstrap (array) : If None, empirical relation is assumed to be exact. If specified, must be an array of boostrapped 
                             empirical relation coefficients. See empirical_relation_bootstrap() for details.
@@ -1439,7 +1461,15 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
                 Msigma = (M/M170817)*(SNR170817/SNR)*sigma170817
             else:
                 Msigma = 0.01
-            Mkern = st.norm(loc=eventdict[key]['mchirp'],scale=Msigma)
+            if Mchirp_scatter is not None:
+                if Mchirp_scatter=='match':
+                    scatter_sigma = Msigma
+                else:
+                    scatter_sigma = Mchirp_scatter
+                Mmu = st.norm.rvs(loc=eventdict[key]['mchirp'],scale=scatter_sigma)
+            else:
+                Mmu = eventdict[key]['mchirp']
+            Mkern = st.norm(loc=Mmu,scale=Msigma)
         elif Mchirp_type=='samples':
             Mkern = eventdict[key]['Mkern']
         else:
