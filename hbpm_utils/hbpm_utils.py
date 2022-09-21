@@ -1280,7 +1280,7 @@ def selection_function(fhat):
     b = np.invert(a)
     return a,b
     
-def single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z=None,bootstrap=None):
+def single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,Mpop_prior=None,z=None,bootstrap=None):
     '''
     Function to compute the likelihood L(data|R16) for a single event.
     Expanded into L(d_PM,d_IN|R16) = p(fp|d_PM)/pi(fp) * p(Mc|d_IN)/pi(Mc) * p(fp,Mc|R16)
@@ -1291,7 +1291,8 @@ def single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z=None,bootstrap=Non
         Mkern (kernel) : Chirp mass posterior
         fkern (kernel) : Peak frequency posterior
         fprior (kernel) : Peak frequency prior
-        Mprior (kernel) : Chirp mass prior
+        Mprior (kernel) : Chirp mass prior used in original chirp mass posterior calculation
+        Mpop_prior (kernel) : Our choice of chirp mass prior. Defaults to matching Mprior.
         z (float) : If None, no redshift adjustment is made. If specified, shoudl be the (known) redshift of BNS merger.
         bootstrap (array) : If None, empirical relation is assumed to be exact. If specified, must be an array of boostrapped 
                             empirical relation coefficients. See empirical_relation_bootstrap() for details.
@@ -1303,10 +1304,15 @@ def single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z=None,bootstrap=Non
     Rlikes = []
     ## get number of detectors
     Ndet = fkern.ndet
+    ## redshift adjustment
     if z is not None:
         z_adj = 1/(1+z)
     else:
         z_adj = 1
+    ## Match Mpop_prior to Mprior if unspecified
+    if Mpop_prior is None:
+        Mpop_prior = Mprior
+    ## compute likelihood across grid in R
     for R in Rs:
         ## fhat = F_E(R,M)
         if bootstrap is not None:
@@ -1321,20 +1327,20 @@ def single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z=None,bootstrap=Non
         ## = p(f|D_PM)p(D_PM)/p(f) * p(M|D_IN)p(D_IN)/p(M)
         ## but factor p(D_x) out
         if bootstrap is not None:
-            undet_like = np.repeat((Mkern.pdf(Ms)/Mprior.pdf(Ms) \
-                                    *1).reshape(-1,1),bootstrap.shape[0],axis=1)[b]
-                                    #*st.norm.pdf(Ms,loc=1.155,scale=0.05)).reshape(-1,1),bootstrap.shape[0],axis=1)[b]
+            undet_like = np.repeat(((Mkern.pdf(Ms)/Mprior.pdf(Ms))*Mpop_prior.pdf(Ms)).reshape(-1,1),bootstrap.shape[0],axis=1)[b]
+#                                    *1).reshape(-1,1),bootstrap.shape[0],axis=1)[b]
+                                    
         else:
-            undet_like = (Mkern.pdf(Ms[b])/Mprior.pdf(Ms[b]))
+            undet_like = (Mkern.pdf(Ms[b])/Mprior.pdf(Ms[b]))*Mpop_prior.pdf(Ms[b])
         ## make sure that these give same result under no information in f
         if np.sum(a) > 0:
             if bootstrap is not None:
                 Mdet_frac = np.repeat((Mkern.pdf(Ms)/Mprior.pdf(Ms) \
-                                       *1).reshape(-1,1),bootstrap.shape[0],axis=1)[a]
+                                       *Mpop_prior.pdf(Ms)).reshape(-1,1),bootstrap.shape[0],axis=1)[a]
                                       # *st.norm.pdf(Ms,loc=1.155,scale=0.05)).reshape(-1,1),bootstrap.shape[0],axis=1)[a]
                 det_like = (fkern.pdf(fhat_MR[a])/(fprior.pdf(fhat_MR[a])))*Mdet_frac
             else:
-                det_like = (fkern.pdf(fhat_MR[a])/(fprior.pdf(fhat_MR[a])))*(Mkern.pdf(Ms[a])/Mprior.pdf(Ms[a]))
+                det_like = (fkern.pdf(fhat_MR[a])/(fprior.pdf(fhat_MR[a])))*(Mkern.pdf(Ms[a])/Mprior.pdf(Ms[a]))*Mpop_prior.pdf(Ms[a])
             ## marginalize
             Rlike_i = np.sum(det_like) + np.sum(undet_like)
 #            norm = 1#np.sum(fkern.pdf(fhat_MR[a])/fprior.pdf(fhat_MR[a]))/np.sum(a)
@@ -1408,7 +1414,7 @@ def iterative_normalized_aggregate_likelihood(likelihood_list):
 
 
 def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st.uniform(loc=1.5,scale=2.5),
-                               Mprior=st.uniform(loc=0,scale=5),Mchirp_scaling='none',Mchirp_scatter=None,verbose=True,bootstrap=None,z_adj=None):
+                               Mprior=st.uniform(loc=0,scale=5),Mpop_prior=None,Mchirp_scaling='none',Mchirp_scatter=None,verbose=True,bootstrap=None,z_adj=None):
     '''
     Function to compute a list containing the likelihood p(data|R) for each event in an eventdict produced by either
     gen_BayesWave_eventdict() or gen_simulated_eventdict(). 
@@ -1423,7 +1429,8 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
                             each eventdict entry will be used (along with Mchirp_scaling and Mchirp_scatter, below) to simulate the Mchirp posteriors as 
                             Normal distributions. If 'samples', the Posterior_M object stored in each eventdict will be used instead.
         fprior (kernel) : Peak frequency prior kernel.
-        Mprior (kernel) : Chirp mass prior kernel.
+        Mprior (kernel) : Chirp mass prior kernel used in original calculation of chirp mass posteriors.
+        Mpop_prior (kernel) : Our choice of chirp mass prior. Defaults to matching Mprior.
         Mchirp_scaling (str) : How to scale the simulated chirp mass posterior width. Can be 'none' (sets sigma_Mc = 0.01 Msun),
                                'dist' (scales with distance to merger), or 'snr' (scales with network signal-to-noise)
                                We use GW170817 as a reference point. (See Farr et al. (2016) for details on this scaling)
@@ -1478,11 +1485,11 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
         if z_adj is not None:
             if z_adj == 'known':
                 z = eventdict[key]['z']
-                like_i = single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z,bootstrap=bootstrap)
+                like_i = single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,Mpop_prior=Mpop_prior,z=z,bootstrap=bootstrap)
             else:
                 raise TypeError("Invalid specification of z_adj. Only 'known' is currently supported.")
         else:
-            like_i = single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,z=None,bootstrap=bootstrap)
+            like_i = single_event_likelihood(Rs,Ms,Mkern,fkern,fprior,Mprior,Mpop_prior=Mpop_prior,z=None,bootstrap=bootstrap)
         likes_all.append(like_i)
     return likes_all   
     

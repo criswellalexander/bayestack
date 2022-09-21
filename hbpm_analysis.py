@@ -208,8 +208,10 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
         else:
             final_samples = agg_prior_samples.flatten()
         total_fprior = Prior_f(final_samples,boundary='Reflection',kde_bandwidth=prior_bandwidth)
-    ## set Mchirp prior (uniform unless we change it)
+    ## set Mchirp prior (uniform unless we change it) (p_0(M) in the formalism)
     Mprior = st.uniform(loc=Ms.min(),scale=(Ms.max()-Ms.min()))
+    ## set Mpop_prior to match distributions used for Petrov et al. simulations (p(M) in the formalism)
+    Mpop_prior = st.norm(loc=1.33,scale=0.09)
     
     ## handle detector-noise-induced scatter of the Mchirp posterior means
     if Mchirp_scatter:
@@ -286,7 +288,7 @@ def run_analysis(datadir,fprior_spec,Rprior,eos,sim_df_file,ev_df_file,z_adj=Non
 
     ## compute likelihoods
     print("Computing likelihoods...")
-    likes = get_multievent_likelihoods(Rs,Ms,eventdict,fprior=total_fprior,Mprior=Mprior,
+    likes = get_multievent_likelihoods(Rs,Ms,eventdict,fprior=total_fprior,Mprior=Mprior,Mpop_prior=Mpop_prior,
                                        verbose=False,bootstrap=bootstrap,
                                        z_adj=z_adj,Mchirp_scaling=Mchirp_scaling,Mchirp_scatter=Mchirp_scatter_sigma)
     ## save
