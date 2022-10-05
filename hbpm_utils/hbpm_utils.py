@@ -1414,7 +1414,8 @@ def iterative_normalized_aggregate_likelihood(likelihood_list):
 
 
 def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st.uniform(loc=1.5,scale=2.5),
-                               Mprior=st.uniform(loc=0,scale=5),Mpop_prior=None,Mchirp_scaling='none',Mchirp_scatter=None,verbose=True,bootstrap=None,z_adj=None):
+                               Mprior=st.uniform(loc=0,scale=5),Mpop_prior=None,Mchirp_scaling='none',Mchirp_scatter=None,
+                               rng=None,verbose=True,bootstrap=None,z_adj=None):
     '''
     Function to compute a list containing the likelihood p(data|R) for each event in an eventdict produced by either
     gen_BayesWave_eventdict() or gen_simulated_eventdict(). 
@@ -1438,6 +1439,7 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
         Mchirp_scatter (float or str) : Standard deviation of detector-noise-induced scatter by which to move the Mchirp posterior mean from the true Mchirp before generating samples.
                                  Should be of same order as sigma_mc from Mchirp_scaling.
                                  Only needed if Mchirp_type is 'simulated'. Can also be 'match' to be set to each event's respective sigma_Mc.
+        rng (Generator) : Numpy RNG instance (e.g. np.random.default_rng(seed))
         verbose (bool) : If True, code will print progress updates with each event.
         bootstrap (array) : If None, empirical relation is assumed to be exact. If specified, must be an array of boostrapped 
                             empirical relation coefficients. See empirical_relation_bootstrap() for details.
@@ -1473,7 +1475,10 @@ def get_multievent_likelihoods(Rs,Ms,eventdict,Mchirp_type='simulated',fprior=st
                     scatter_sigma = Msigma
                 else:
                     scatter_sigma = Mchirp_scatter
-                Mmu = st.norm.rvs(loc=eventdict[key]['mchirp'],scale=scatter_sigma)
+                if rng is not None:
+                    Mmu = st.norm.rvs(loc=eventdict[key]['mchirp'],scale=scatter_sigma,random_state=rng)
+                else:
+                    Mmu = st.norm.rvs(loc=eventdict[key]['mchirp'],scale=scatter_sigma)
             else:
                 Mmu = eventdict[key]['mchirp']
             Mkern = st.norm(loc=Mmu,scale=Msigma)
