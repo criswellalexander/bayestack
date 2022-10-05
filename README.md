@@ -1,4 +1,4 @@
-# HAYstack v1.0.0
+# <span style="font-variant: small-caps;">bayestack</span> v1.0.0
 
 Hierarchical bAYsian stacking
 
