@@ -6,6 +6,7 @@ This file contains the various required functions for the Hierarchical Post-Merg
 '''
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import mplcyberpunk
 import scipy.stats as st
@@ -2247,7 +2248,7 @@ def plot_reconstruction_spec(powerspec_info,psd_info,injected_spectrum,y_units='
 
 def plot_reconstruction_spec_on_ax(ax,powerspec_info,psd_info,injected_spectrum,
                                    y_units='power',xlim=(1.5e3,4e3),ylim=None,xlabel=None,ylabel=None,
-                                   title="BayesWave Reconstructed Power Spectra",**legend_kwargs):
+                                   title="BayesWave Reconstructed Power Spectra",rasterize=False,**legend_kwargs):
     '''
     Function to plot a BayesWave signal reconstruction on a specified matplotlib axis.
     
@@ -2260,6 +2261,7 @@ def plot_reconstruction_spec_on_ax(ax,powerspec_info,psd_info,injected_spectrum,
         ylim (tuple) : matplotlib ylim if desired
         ylabel (str) : matplotlib ylabel if desired
         title (str) : matplotlib title if desired
+        rasterize (bool) : whether to rasterize parts of the reconstruction plot that don't like to display in pdf form when viewed with some browsers
         **legend_kwargs : Any legend keyword arguments you care to pass.
     
     Returns:
@@ -2301,6 +2303,10 @@ def plot_reconstruction_spec_on_ax(ax,powerspec_info,psd_info,injected_spectrum,
         postspec_med = BW_power2strain(postspec_freqs,powerspec_info[1])*2*np.sqrt(postspec_freqs)
     else:
         raise TypeError("Invalid units specified. Only 'strain' and 'power' are supported.")
+    
+    if rasterize:
+        ax.set_rasterization_zorder(-1)
+    
     # plot injection
     ax.semilogy(injspec_freqs,injspec,injcolor, linewidth=1,label='Injection')
 
@@ -2309,9 +2315,14 @@ def plot_reconstruction_spec_on_ax(ax,powerspec_info,psd_info,injected_spectrum,
     ax.semilogy(psd_freqs,psd,color='k',ls='-',label='Detector PSD')
 
     # plot powerspec
-    ax.fill_between(postspec_freqs,postspec_50[0],postspec_50[1],color=signalcolor,alpha=0.5)
-    ax.fill_between(postspec_freqs,postspec_90[0],postspec_90[1],color=signalcolor,alpha=0.3)
-    ax.plot(postspec_freqs,postspec_med,color=signalcolor,label='Reconstruction')
+    if rasterize:
+        ax.fill_between(postspec_freqs,postspec_50[0],postspec_50[1],color=signalcolor,alpha=0.5,zorder=-4)
+        ax.fill_between(postspec_freqs,postspec_90[0],postspec_90[1],color=signalcolor,alpha=0.3,zorder=-3)
+        ax.plot(postspec_freqs,postspec_med,color=signalcolor,label='Reconstruction',zorder=-2)
+    else:
+        ax.fill_between(postspec_freqs,postspec_50[0],postspec_50[1],color=signalcolor,alpha=0.5)
+        ax.fill_between(postspec_freqs,postspec_90[0],postspec_90[1],color=signalcolor,alpha=0.3)
+        ax.plot(postspec_freqs,postspec_med,color=signalcolor,label='Reconstruction')
 
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -2333,7 +2344,7 @@ def plot_reconstruction_spec_on_ax(ax,powerspec_info,psd_info,injected_spectrum,
 
 def plot_reconstruction_with_fpeak(powerspec_info,psd_info,injected_spectrum,fpeak_post,
                                    xlim=(1.5e3,4e3),recon_ylim=None,bins=100,saveto=None,xticks=None,
-                                   xlabel='Frequency (kHz)',suptitle=None,**legend_kwargs):
+                                   xlabel='Frequency (kHz)',suptitle=None,rasterize=False,rast_dpi=200,**legend_kwargs):
     '''
     Function to make a stacked plot of a BayesWave post-merger signal reconstruction with corresponding fpeak posterior samples.
     
@@ -2349,11 +2360,18 @@ def plot_reconstruction_with_fpeak(powerspec_info,psd_info,injected_spectrum,fpe
         xticks (list) : matplotlib xticks, if desired
         xlabel (str) : matplotlib xlabel if desired (shared by both plots)
         suptitle (str) : matplotlib suptitle if desired
+        rasterize (bool) : whether to rasterize parts of the reconstruction plot that don't like to display in pdf form when viewed with some browsers
+        rast_dpi (int) : if rasterize == True, dpi resolution of the rasterized portions. Default
         **legend_kwargs : Any legend keyword arguments for the reconstruction plot you care to pass.
     '''
+    ## if we are rasterizing the fill_betweens, need to first manuually tweak the dpi
+    ## only way tp dp this is by messing with the global settings, so first back those up
+    if rasterize:
+        backup_dpi = matplotlib.rcParams['savefig.dpi']
+        matplotlib.rcParams['savefig.dpi'] = rast_dpi
     fig, (ax1, ax2) = plt.subplots(2,1,sharex=True,figsize=(6,9),gridspec_kw={'height_ratios': [3,1]})
-    plot_reconstruction_spec_on_ax(ax1,powerspec_info,psd_info,injected_spectrum,xlim=xlim,ylim=recon_ylim,**legend_kwargs)
-    ax2.hist(fpeak_post,bins=bins,color='mediumorchid',alpha=0.8)
+    plot_reconstruction_spec_on_ax(ax1,powerspec_info,psd_info,injected_spectrum,xlim=xlim,ylim=recon_ylim,rasterize=rasterize,**legend_kwargs)
+    ax2.hist(fpeak_post.flatten(),bins=bins,color='mediumorchid',alpha=0.8)
     ax2.set_xlabel(xlabel)
     ax2.set_title("$\mathrm{f_{peak}}$ Posterior Samples")
     ax2.set_yticks([])
@@ -2366,8 +2384,13 @@ def plot_reconstruction_with_fpeak(powerspec_info,psd_info,injected_spectrum,fpe
     if suptitle is not None:
         plt.suptitle(suptitle)
     if saveto is not None:
+        if rasterize:
+            plt.savefig(saveto,bbox_inches='tight')
         plt.savefig(saveto,bbox_inches='tight')
     plt.show()
+    ## reset savefig dpi if we rasterized the image
+    if rasterize:
+        matplotlib.rcParams['savefig.dpi'] = backup_dpi
     return
 
 
