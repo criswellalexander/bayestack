@@ -2128,7 +2128,16 @@ def unpack_posterior_dict(posterior_eventdict):
     if type(posterior_eventdict['prior']) is str:
         Rprior_kernel = st.uniform(loc=9,scale=6)
     else:
-        Rprior_kernel = kde(posterior_eventdict['prior'])
+        ## handle weighted samples
+        Rprior_data = posterior_eventdict['prior']
+        if Rprior_data.ndim > 1:
+            Rprior_samples = Rprior_data[:,0]
+            Rprior_weights = Rprior_data[:,1]
+            Rprior_kernel = kde(Rprior_samples,weights=Rprior_weights)
+        else:
+            Rprior_samples = Rprior_data
+            Rprior_kernel = kde(Rprior_samples)
+            
     Rs = posterior_eventdict['Rs']
     
     return Rs, Rprior_kernel, likelihood_list
